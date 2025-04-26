@@ -10,15 +10,43 @@ using namespace std;
 
 #define PORT 8080
 #define ROOT_DIR "htmlfiles"
+
 void sendResponse(SOCKET clientSocket, const string& response)
 {
-    send(clientSocket, response.c_str(), response.size(), 0);
+    int result = send(clientSocket, response.c_str(), response.size(), 0);
+    if (result == SOCKET_ERROR)
+    {
+        cerr << "Send failed" << endl;
+    }
 }
 
 void handleRequest(SOCKET clientSocket)
 {
+    // Читання запиту клієнта
+    char buffer[1024];
+    int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+    if (bytesReceived == SOCKET_ERROR || bytesReceived == 0)
+    {
+        cerr << "Recv failed or client closed connection" << endl;
+        closesocket(clientSocket);
+        return;
+    }
+    buffer[bytesReceived] = '\0'; // Завершуємо рядок
+
+    string request(buffer);
+
+    // Перевірка чи GET запит
+    if (request.find("GET") == string::npos)
+    {
+        cerr << "Only GET requests are supported" << endl;
+        closesocket(clientSocket);
+        return;
+    }
+
+    // Формуємо відповідь
     string httpResponse = "HTTP/1.1 200 OK\r\nContent-Length: " +
         to_string(strlen(ROOT_DIR)) + "\r\n\r\n" + ROOT_DIR;
+
     sendResponse(clientSocket, httpResponse);
     closesocket(clientSocket);
 }
@@ -77,6 +105,7 @@ int main()
         inet_ntop(AF_INET, &(clientAddr.sin_addr), client_addr, INET_ADDRSTRLEN);
         cout << "Connection accepted from " << client_addr << ":" << ntohs(clientAddr.sin_port) << endl;
 
+        // Створюємо потік для обробки клієнта
         thread clientThread(handleRequest, clientSocket);
         clientThread.detach();
     }
