@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <string>
 #include <fstream>
+#include <sstream>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <thread>
@@ -13,8 +14,12 @@ using namespace std;
 #define ROOT_DIR "htmlfiles"
 
 // Функція для надсилання відповіді клієнту
-void sendResponse(SOCKET clientSocket, const string& response)
+void sendResponse(SOCKET clientSocket, const string& status, const string& body = "")
 {
+    string response = "HTTP/1.1 " + status + "\r\n" +
+                      "Content-Length: " + to_string(body.size()) + "\r\n" +
+                      "\r\n" +
+                      body;
     int result = send(clientSocket, response.c_str(), response.size(), 0);
     if (result == SOCKET_ERROR)
     {
@@ -41,7 +46,7 @@ void handleRequest(SOCKET clientSocket)
     int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
     if (bytesReceived == SOCKET_ERROR || bytesReceived == 0)
     {
-        cerr << "Recv failed or client closed connection" << endl;
+        cerr << "Receive failed or client closed connection" << endl;
         closesocket(clientSocket);
         return;
     }
@@ -49,53 +54,42 @@ void handleRequest(SOCKET clientSocket)
 
     string request(buffer);
 
-    // Перевірка чи це GET запит
-    if (request.find("GET") == string::npos)
+    istringstream requestStream(request);
+    string method, path, version;
+    requestStream >> method >> path >> version;
+
+    if (method != "GET")
     {
         cerr << "Only GET requests are supported" << endl;
-        // Відправляємо помилку 400 для поганих запитів
-        string httpResponse = "HTTP/1.1 400 Bad Request\r\n\r\n";
-        sendResponse(clientSocket, httpResponse);
+        sendResponse(clientSocket, "400 Bad Request", "Only GET requests are supported.");
         closesocket(clientSocket);
         return;
     }
 
-    // Отримуємо шлях з запиту
-    size_t pathStart = request.find("GET ") + 4;
-    size_t pathEnd = request.find(" HTTP/");
-    string path = request.substr(pathStart, pathEnd - pathStart);
-
-    // Якщо шлях не є /index.html або /page2.html, повертаємо 404
     if (path != "/index.html" && path != "/page2.html")
     {
         cerr << "Page not found: " << path << endl;
-        string httpResponse = "HTTP/1.1 404 Not Found\r\n\r\n";
-        sendResponse(clientSocket, httpResponse);
+        sendResponse(clientSocket, "404 Not Found", "Page not found.");
         closesocket(clientSocket);
         return;
     }
 
-    // Формуємо шлях до файлу
     string filePath = ROOT_DIR + path;
-
-    // Читаємо вміст файлу
     string fileContent = readFile(filePath);
+
     if (fileContent.empty())
     {
         cerr << "File not found: " << filePath << endl;
-        string httpResponse = "HTTP/1.1 404 Not Found\r\n\r\n";
-        sendResponse(clientSocket, httpResponse);
+        sendResponse(clientSocket, "404 Not Found", "File not found.");
     }
     else
     {
-        // Формуємо відповідь з вмістом файлу
-        string httpResponse = "HTTP/1.1 200 OK\r\nContent-Length: " +
-            to_string(fileContent.size()) + "\r\n\r\n" + fileContent;
-        sendResponse(clientSocket, httpResponse);
+        sendResponse(clientSocket, "200 OK", fileContent);
     }
 
     closesocket(clientSocket);
 }
+
 
 int main()
 {
